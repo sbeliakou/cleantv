@@ -6,6 +6,12 @@
 
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
 
+> **This fork is tuned for one specific set:** a Philips 43" on MediaTek `m7332`
+> (`PH0M_EA_T32_2G`, Android 14). The launcher ships with that TV's apps, a five-tile dock and
+> Belarusian strings, and `skills/android-tv-setup/references/devices/philips-tpv-m7332.md`
+> records what was disabled, what must never be disabled on this board, and why USB storage
+> does not work on it. Upstream is [JohnWayneeee/cleantv](https://github.com/JohnWayneeee/cleantv).
+
 <p align="center">
   <b>Remove ads from your Google TV home screen and make the TV fast again with one sentence in Claude Code.</b><br>
   The skill debloats the TV over ADB without root, calibrates picture and sound, and swaps the ad-filled home screen for a clean Android TV launcher with your own apps.
