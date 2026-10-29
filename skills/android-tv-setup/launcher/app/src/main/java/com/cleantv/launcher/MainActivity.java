@@ -78,7 +78,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout root;
     private ScrollView scroll;
-    private View hero, dockBand, glow, bottomSpace, scrollHint;
+    private View hero, dockBand, glow, bottomSpace;
     private RecyclerView dockRv, gridRv;
     private TextView greeting, clock, date, dockTitle, gridTitle;
     private TextView[] pills;
@@ -138,10 +138,6 @@ public class MainActivity extends Activity {
 
         root = findViewById(R.id.root);
         scroll = findViewById(R.id.scroll);
-        scrollHint = findViewById(R.id.scrollHint);
-        // The hint says "there is more below"; it is pointless once the page has moved.
-        scroll.getViewTreeObserver().addOnScrollChangedListener(() ->
-                scrollHint.setAlpha(scroll.getScrollY() > px(8) ? 0f : 0.45f));
         hero = findViewById(R.id.hero);
         dockBand = findViewById(R.id.dockBand);
         glow = findViewById(R.id.glow);
@@ -264,10 +260,9 @@ public class MainActivity extends Activity {
             rv.setDescendantFocusability(RecyclerView.FOCUS_BLOCK_DESCENDANTS);
         }
 
-        int labelSpace = 0;  // tile labels are hidden; the name is shown above the dock
+        int labelSpace = px(12) + px(26);
         int bandH = dockBand.getPaddingTop() + dockBand.getPaddingBottom() + cardH + labelSpace;
-        // 30dp was flush against the bottom; 56dp leaves the dock clear of the scroll hint.
-        hero.getLayoutParams().height = screenH - bandH - px(56);
+        hero.getLayoutParams().height = screenH - bandH - px(30);
         bottomSpace.getLayoutParams().height = screenH;
     }
 
@@ -662,8 +657,7 @@ public class MainActivity extends Activity {
         Date now = new Date();
         boolean h24 = DateFormat.is24HourFormat(this);
         clock.setText(DateFormat.format(h24 ? "HH:mm" : "h:mm", now));
-        // The owner wants the date in Belarusian regardless of the TV's own language.
-        String d = new java.text.SimpleDateFormat("EEEE, d MMMM", new Locale("be")).format(now);
+        String d = new java.text.SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(now);
         date.setText(d.isEmpty() ? d : Character.toUpperCase(d.charAt(0)) + d.substring(1));
         int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         greeting.setText(h >= 5 && h < 12 ? R.string.good_morning

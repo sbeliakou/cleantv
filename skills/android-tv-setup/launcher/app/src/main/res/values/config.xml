@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Tiles per row, for the dock and the grid below it. -->
-    <integer name="columns">5</integer>
+    <integer name="columns">4</integer>
 
     <!-- Dock apps, left to right, by package name. Missing packages are skipped.
          The skill replaces this list with the user's answer. -->
     <string-array name="dock_apps">
         <item>com.google.android.youtube.tv</item>
-        <item>ru.kinopoisk.tv</item>
         <item>com.netflix.ninja</item>
-        <item>org.videolan.vlc</item>
-        <item>io.github.jqssun.airplay</item>
+        <item>com.android.vending</item>
+        <item>com.google.android.videos</item>
     </string-array>
 
     <!-- App that plays the tuner (Live TV entry of the Inputs menu). Find it with:
