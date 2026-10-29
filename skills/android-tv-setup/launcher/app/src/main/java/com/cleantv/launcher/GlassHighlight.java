@@ -10,13 +10,14 @@ import android.graphics.RectF;
 import android.graphics.Shader;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 
 /** One translucent "glass" plate that springs from target to target. */
 public class GlassHighlight extends View {
 
-    /** Damped spring: ~4% overshoot, settles well within the duration. */
-    static final Interpolator SPRING = t -> (float) (1 - Math.exp(-8 * t) * Math.cos(8 * t));
+    /** Plain deceleration: the plate must not overshoot, or it reads as a miss and a correction. */
+    static final Interpolator GLIDE = new DecelerateInterpolator(2f);
 
     private final RectF cur = new RectF(), from = new RectF(), to = new RectF();
     private float curR, fromR, toR;
@@ -37,6 +38,12 @@ public class GlassHighlight extends View {
         setWillNotDraw(false);
     }
 
+    /** Tints the plate's border; the launcher uses it to signal the move mode. */
+    public void setStrokeColor(int color) {
+        stroke.setColor(color);
+        invalidate();
+    }
+
     public void moveTo(RectF target, float radius, boolean animate) {
         to.set(target);
         toR = radius;
@@ -52,8 +59,8 @@ public class GlassHighlight extends View {
         from.set(cur);
         fromR = curR;
         anim = ValueAnimator.ofFloat(0, 1);
-        anim.setDuration(420);
-        anim.setInterpolator(SPRING);
+        anim.setDuration(300);
+        anim.setInterpolator(GLIDE);
         anim.addUpdateListener(a -> {
             float f = (float) a.getAnimatedValue();
             cur.set(lerp(from.left, to.left, f), lerp(from.top, to.top, f),
@@ -71,10 +78,7 @@ public class GlassHighlight extends View {
     @Override
     protected void onDraw(Canvas c) {
         if (!placed || cur.isEmpty()) return;
-        sheenMatrix.setScale(1, cur.height());
-        sheenMatrix.postTranslate(0, cur.top);
-        sheen.setLocalMatrix(sheenMatrix);
-        c.drawRoundRect(cur, curR, curR, fill);
+        // Outline only: the translucent sheen used to wash out the logo underneath.
         c.drawRoundRect(cur, curR, curR, stroke);
     }
 }

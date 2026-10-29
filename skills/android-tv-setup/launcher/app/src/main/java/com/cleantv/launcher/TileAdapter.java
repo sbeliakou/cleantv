@@ -30,30 +30,40 @@ final class TileAdapter extends RecyclerView.Adapter<TileAdapter.Holder> {
     }
 
     private final List<AppRepository.App> apps;
-    private final int cardHeight, gap;
+    private final int cardHeight, gap, bottomGap, vPad;
     private final float radius;
     private final Typeface font;
-    private final boolean fadeIn;
+    private final boolean fadeIn, labels;
 
     /** fadeIn: the images appear on their plates, used once when the tiles replace the skeletons. */
-    TileAdapter(List<AppRepository.App> apps, int cardHeight, int gap, float radius, Typeface font, boolean fadeIn) {
+    /**
+     * bottomGap: vertical space under each tile, so grid rows do not touch; the dock passes 0.
+     * labels: the grid needs the name under the tile, the dock has the big title above it.
+     */
+    TileAdapter(List<AppRepository.App> apps, int cardHeight, int gap, int bottomGap, int vPad,
+                float radius, Typeface font, boolean fadeIn, boolean labels) {
         this.apps = apps;
         this.cardHeight = cardHeight;
         this.gap = gap;
+        this.bottomGap = bottomGap;
+        this.vPad = vPad;
         this.radius = radius;
         this.font = font;
         this.fadeIn = fadeIn;
+        this.labels = labels;
     }
 
     @NonNull
     @Override
     public Holder onCreateViewHolder(@NonNull ViewGroup parent, int type) {
         View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_tile, parent, false);
-        v.setPadding(gap / 2, 0, gap / 2, 0);
+        // vPad leaves room for the focus lift, which would otherwise be clipped.
+        v.setPadding(gap / 2, vPad, gap / 2, vPad + bottomGap);
         Holder h = new Holder(v);
         h.card.getLayoutParams().height = cardHeight;
         h.card.setClipToOutline(true);
         h.label.setTypeface(font);
+        if (!labels) h.label.setVisibility(View.GONE);
         return h;
     }
 

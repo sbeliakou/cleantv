@@ -15,6 +15,8 @@ import android.content.pm.ApplicationInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.ColorMatrix;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -64,6 +66,8 @@ public class MainActivity extends Activity {
 
     private static final int TOP = 0, DOCK = 1, GRID = 2, MENU = 3;
     private static final float LIFT = 1.08f;
+    /** Border colours: plain white while navigating, amber while a tile is held. */
+    private static final int STROKE_IDLE = 0x59FFFFFF, STROKE_MOVING = 0xCCFFB340;
 
     private static final class Input {
         String id;
@@ -78,9 +82,9 @@ public class MainActivity extends Activity {
 
     private FrameLayout root;
     private ScrollView scroll;
-    private View hero, dockBand, glow, bottomSpace, scrollHint;
+    private View hero, dockBand, glow, bottomSpace, scrollHint, insertCursor;
     private RecyclerView dockRv, gridRv;
-    private TextView greeting, clock, date, dockTitle, gridTitle;
+    private TextView greeting, clock, date, dockTitle, gridTitle, moveHint;
     private TextView[] pills;
     private LinearLayout inputsMenu;
     private GlassHighlight highlight;
@@ -91,6 +95,12 @@ public class MainActivity extends Activity {
     private Typeface thin, light, regular;
 
     private int zone = DOCK, topIdx, dockIdx, gridIdx, menuIdx;
+    private boolean moving, pendingActivate, dropOnKeyUp;
+    /** Where the held tile would land; 0..dock.size(), drawn as a vertical bar. */
+    private int insertAt;
+    /** Where the held tile came from, whether it has already left the dock, and its old slot. */
+    private boolean heldFromGrid, movedOut;
+    private int origDockIdx;
     private View lifted;
     private ObjectAnimator scrollAnim;
     private ValueAnimator glowAnim;
@@ -139,9 +149,16 @@ public class MainActivity extends Activity {
         root = findViewById(R.id.root);
         scroll = findViewById(R.id.scroll);
         scrollHint = findViewById(R.id.scrollHint);
+        insertCursor = findViewById(R.id.insertCursor);
         // The hint says "there is more below"; it is pointless once the page has moved.
-        scroll.getViewTreeObserver().addOnScrollChangedListener(() ->
-                scrollHint.setAlpha(scroll.getScrollY() > px(8) ? 0f : 0.45f));
+        scroll.getViewTreeObserver().addOnScrollChangedListener(() -> {
+            updateScrollHint();
+            // Both are positioned in screen coordinates, so they have to follow the page.
+            if (moving) {
+                applyFocus(false);
+                placeCursor(false);
+            }
+        });
         hero = findViewById(R.id.hero);
         dockBand = findViewById(R.id.dockBand);
         glow = findViewById(R.id.glow);
@@ -152,6 +169,7 @@ public class MainActivity extends Activity {
         clock = findViewById(R.id.clock);
         date = findViewById(R.id.date);
         dockTitle = findViewById(R.id.dockTitle);
+        moveHint = findViewById(R.id.moveHint);
         gridTitle = findViewById(R.id.gridTitle);
         inputsMenu = findViewById(R.id.inputsMenu);
         highlight = findViewById(R.id.highlight);
@@ -265,9 +283,13 @@ public class MainActivity extends Activity {
         }
 
         int labelSpace = 0;  // tile labels are hidden; the name is shown above the dock
-        int bandH = dockBand.getPaddingTop() + dockBand.getPaddingBottom() + cardH + labelSpace;
+        int lift = (int) (cardH * (LIFT - 1) / 2) + px(2);
+        int bandPad = Math.max(0, dockBand.getPaddingTop() - lift);
+        dockBand.setPadding(dockBand.getPaddingLeft(), bandPad, dockBand.getPaddingRight(), bandPad);
+        int bandH = 2 * bandPad + cardH + 2 * lift + labelSpace;
         // 30dp was flush against the bottom; 56dp leaves the dock clear of the scroll hint.
         hero.getLayoutParams().height = screenH - bandH - px(56);
+        insertCursor.getLayoutParams().height = (int) (cardH * 0.62f);
         bottomSpace.getLayoutParams().height = screenH;
     }
 
@@ -285,6 +307,18 @@ public class MainActivity extends Activity {
             p.setBackground(bg);
             p.setTypeface(regular);
         }
+
+        GradientDrawable bar = new GradientDrawable();
+        bar.setColor(STROKE_MOVING | 0xFF000000);
+        bar.setCornerRadius(px(1));
+        insertCursor.setBackground(bar);
+
+        GradientDrawable hint = new GradientDrawable();
+        hint.setColor(0xF02C2C2E);
+        hint.setCornerRadius(px(24));
+        hint.setStroke(px(1), 0x33FFFFFF);
+        moveHint.setBackground(hint);
+        moveHint.setTypeface(regular);
 
         GradientDrawable menu = new GradientDrawable();
         menu.setColor(0xFA1C1C1F);
@@ -357,8 +391,9 @@ public class MainActivity extends Activity {
         }
         repo = r;
         lifted = null;
-        dockRv.setAdapter(new TileAdapter(repo.dock, cardH, gap, radius, regular, first));
-        gridRv.setAdapter(new TileAdapter(repo.grid, cardH, gap, radius, regular, first));
+        int lift = (int) (cardH * (LIFT - 1) / 2) + px(2);
+        dockRv.setAdapter(new TileAdapter(repo.dock, cardH, gap, 0, lift, radius, regular, first, false));
+        gridRv.setAdapter(new TileAdapter(repo.grid, cardH, gap, gap / 2, 0, radius, regular, first, true));
         gridTitle.setVisibility(repo.grid.isEmpty() ? View.GONE : View.VISIBLE);
         prefs.edit().putInt("dock_n", repo.dock.size()).putInt("grid_n", repo.grid.size()).apply();
         if (zone != MENU && zone != TOP) restoreFocus();
@@ -430,17 +465,225 @@ public class MainActivity extends Activity {
                 ours = false;
         }
         if (!ours) return super.dispatchKeyEvent(e);
+
+        boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+                || code == KeyEvent.KEYCODE_NUMPAD_ENTER || code == KeyEvent.KEYCODE_BUTTON_A;
+        if (ok) {
+            // The app starts on key-up, so that holding OK can mean "pick this tile up" instead.
+            if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                if (e.getRepeatCount() == 0) {
+                    pendingActivate = !moving;
+                } else if (e.getRepeatCount() == 1 && !moving && (zone == DOCK || zone == GRID)) {
+                    pendingActivate = false;
+                    dropOnKeyUp = true;       // the key-up that ends this long press must not drop the tile
+                    setMoving(true, false);
+                }
+            } else if (e.getAction() == KeyEvent.ACTION_UP) {
+                if (dropOnKeyUp) dropOnKeyUp = false;
+                else if (moving) setMoving(false, true);
+                else if (pendingActivate) activate();
+                pendingActivate = false;
+            }
+            return true;
+        }
+
         if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT: move(-1, 0); break;
             case KeyEvent.KEYCODE_DPAD_RIGHT: move(1, 0); break;
             case KeyEvent.KEYCODE_DPAD_UP: move(0, -1); break;
             case KeyEvent.KEYCODE_DPAD_DOWN: move(0, 1); break;
-            case KeyEvent.KEYCODE_BACK: back(); break;
-            default:
-                if (e.getRepeatCount() == 0) activate();
+            case KeyEvent.KEYCODE_BACK:
+                if (moving) setMoving(false, false);   // Back drops the idea, the order stays
+                else back();
+                break;
         }
         return true;
+    }
+
+    /** The chevron means "there is more below"; it is pointless once the page moved, or while dragging. */
+    private void updateScrollHint() {
+        scrollHint.setAlpha(moving || scroll.getScrollY() > px(8) ? 0f : 0.45f);
+    }
+
+    /** Scrolls the page on its own, which applyFocus cannot do while the zone is frozen in move mode. */
+    private void animateScroll(int to) {
+        if (scrollAnim != null) scrollAnim.cancel();
+        if (scroll.getScrollY() == to) return;
+        scrollAnim = ObjectAnimator.ofInt(scroll, "scrollY", to);
+        scrollAnim.setDuration(380);
+        scrollAnim.setInterpolator(new DecelerateInterpolator(2f));
+        scrollAnim.start();
+    }
+
+    /** Top of the grid, placed where a focused grid row would sit. */
+    private int gridScrollTop() {
+        return Math.max(0, gridRv.getTop() - px(150));
+    }
+
+    private void setMoving(boolean on, boolean commit) {
+        if (moving == on) return;
+        if (on) {
+            heldFromGrid = zone == GRID;
+            movedOut = false;
+            origDockIdx = dockIdx;
+            // A tile coming up from the list aims at the front of the bar, mirroring how a tile sent
+            // down lands at the front of the list. The far end sits in empty space and reads as "nowhere".
+            insertAt = heldFromGrid ? 0 : dockIdx;
+        }
+        moving = on;
+        if (!on) {
+            if (commit) commitMove();
+            else cancelMove();
+        }
+        if (on) {
+            // The cursor is drawn in the dock; with the page scrolled down it would be off-screen.
+            if (heldFromGrid) animateScroll(0);
+            updateMoveHint();
+            dockRv.post(() -> placeCursor(false));
+        } else {
+            insertCursor.animate().alpha(0).setDuration(120).start();
+        }
+        moveHint.animate().alpha(on ? 1 : 0).setDuration(on ? 180 : 140).start();
+        highlight.setStrokeColor(on ? STROKE_MOVING : STROKE_IDLE);
+        updateScrollHint();
+        greyOutOthers(on);
+        updateDockTitle();
+    }
+
+    private void refreshTiles() {
+        if (dockRv.getAdapter() != null) dockRv.getAdapter().notifyDataSetChanged();
+        if (gridRv.getAdapter() != null) gridRv.getAdapter().notifyDataSetChanged();
+        // The views for the new positions do not exist until the adapters have run.
+        dockRv.post(() -> applyFocus(false));
+    }
+
+    /** Puts a tile that already left the dock back where it was, leaving the operation open. */
+    private void restoreToDock() {
+        if (!movedOut || repo.grid.isEmpty()) return;
+        int at = clamp(origDockIdx, 0, repo.dock.size());
+        repo.dock.add(at, repo.grid.remove(0));
+        movedOut = false;
+        zone = DOCK;
+        dockIdx = at;
+        insertAt = at;
+        updateMoveHint();
+        refreshTiles();
+        animateScroll(0);
+    }
+
+    /** Back: undoes a tile that already left the dock; a pending cursor needs no undoing. */
+    private void cancelMove() {
+        restoreToDock();
+    }
+
+    /** Applies whatever the cursor promised: a reorder within the dock, or an addition from the grid. */
+    private void commitMove() {
+        if (movedOut) {               // already applied on screen; just make it stick
+            AppRepository.saveDockOrder(this, repo.dock);
+            return;
+        }
+        if (heldFromGrid) {
+            if (gridIdx >= repo.grid.size()) return;
+            int at = clamp(insertAt, 0, repo.dock.size());
+            repo.dock.add(at, repo.grid.remove(gridIdx));
+            // The dock is one row wide: a tile pushed in pushes the last one back to the grid.
+            if (repo.dock.size() > columns) {
+                repo.insertIntoGrid(repo.dock.remove(repo.dock.size() - 1));
+            }
+            zone = DOCK;
+            dockIdx = at;
+        } else {
+            int from = dockIdx, to = insertAt > dockIdx ? insertAt - 1 : insertAt;
+            to = clamp(to, 0, repo.dock.size() - 1);
+            if (from == to || from >= repo.dock.size()) return;
+            repo.dock.add(to, repo.dock.remove(from));
+            dockIdx = to;
+        }
+        AppRepository.saveDockOrder(this, repo.dock);
+        refreshTiles();
+    }
+
+    /** Puts the bar on the gap the tile would drop into. */
+    private void placeCursor(boolean animate) {
+        boolean noop = !heldFromGrid && (insertAt == dockIdx || insertAt == dockIdx + 1);
+        // While it is invisible it has no meaningful position, so the first show must not fly in.
+        boolean wasHidden = insertCursor.getAlpha() < 0.01f;
+        insertCursor.animate().alpha(noop ? 0 : 1).setDuration(140).start();
+        int n = dockRv.getChildCount();
+        if (noop || n == 0) return;
+        boolean past = insertAt >= n;
+        View item = dockRv.getChildAt(past ? n - 1 : insertAt);
+        Rect r = new Rect(0, 0, item.getWidth(), item.getHeight());
+        root.offsetDescendantRectToMyCoords(item, r);
+        // Each item carries half the gap on both sides, so its edge is the middle of the gap.
+        float x = (past ? r.right : r.left) - px(1.5f);
+        float y = r.centerY() - cardH * 0.62f / 2f;
+        if (animate && !wasHidden) {
+            insertCursor.animate().x(x).y(y).setDuration(160)
+                    .setInterpolator(new DecelerateInterpolator()).start();
+        } else {
+            insertCursor.setX(x);
+            insertCursor.setY(y);
+        }
+    }
+
+    /** In move mode every tile but the one in hand goes grey, so the state reads without any text. */
+    private void greyOutOthers(boolean on) {
+        ColorMatrix m = new ColorMatrix();
+        m.setSaturation(0f);
+        ColorMatrixColorFilter grey = new ColorMatrixColorFilter(m);
+        View held = focusTarget();
+        Object heldItem = held == null ? null : held.getParent();
+        for (RecyclerView rv : new RecyclerView[]{dockRv, gridRv}) {
+            for (int i = 0; i < rv.getChildCount(); i++) {
+                View item = rv.getChildAt(i);
+                ImageView img = item.findViewById(R.id.image);
+                if (img != null) img.setColorFilter(on && item != heldItem ? grey : null);
+            }
+        }
+    }
+
+    /**
+     * In move mode the D-pad drags the tile itself: left and right reorder the dock, down drops the tile
+     * into the grid, up lifts a grid tile into the dock.
+     */
+    /**
+     * In move mode the D-pad only aims: left and right pick a slot in the dock, down marks the tile
+     * for removal, up brings it back. Nothing is rearranged until OK.
+     */
+    private void dragTile(int dx, int dy) {
+        if (dx != 0) {
+            int to = insertAt + dx;
+            // For a tile already in the dock, insertAt == dockIdx and dockIdx + 1 both leave the
+            // order untouched, and they are adjacent, so stepping over them takes a loop.
+            if (!heldFromGrid) while (to == dockIdx || to == dockIdx + 1) to += dx;
+            // Reordering may aim past the last tile — the others shift up. Adding from the list may
+            // not when the bar is full: that slot would only push the new tile straight back out.
+            int last = heldFromGrid && repo.dock.size() >= columns
+                    ? repo.dock.size() - 1 : repo.dock.size();
+            if (to < 0 || to > last || to == insertAt) return;
+            insertAt = to;
+            placeCursor(true);
+        } else if (dy > 0 && !heldFromGrid && !movedOut && repo.dock.size() > 1) {
+            // The tile visibly leaves the bar at once and lands at the top of the list, but the
+            // operation stays open: OK confirms it, Back puts the tile back where it was.
+            repo.grid.add(0, repo.dock.remove(dockIdx));
+            movedOut = true;
+            zone = GRID;
+            gridIdx = 0;
+            updateMoveHint();
+            refreshTiles();
+            animateScroll(gridScrollTop());
+        } else if (dy < 0 && movedOut) {
+            // Up is the natural undo for the step that just happened; Back does the same.
+            restoreToDock();
+        }
+    }
+
+    private void updateMoveHint() {
+        moveHint.setText(movedOut ? R.string.move_hint_moved
+                : heldFromGrid ? R.string.move_hint_add : R.string.move_hint);
     }
 
     private static int clamp(int v, int lo, int hi) {
@@ -452,6 +695,10 @@ public class MainActivity extends Activity {
     }
 
     private void move(int dx, int dy) {
+        if (moving) {
+            dragTile(dx, dy);
+            return;
+        }
         switch (zone) {
             case TOP:
                 if (dx != 0) topIdx = clamp(topIdx + dx, 0, pills.length - 1);
@@ -576,9 +823,10 @@ public class MainActivity extends Activity {
         lift(target, true);
         lifted = target;
 
-        int scrollTo = scrollTarget();
-        if (scrollAnim != null) scrollAnim.cancel();
-        if (scroll.getScrollY() != scrollTo) {
+        // In move mode the page is driven by animateScroll(); applyFocus only redraws on top of it.
+        int scrollTo = moving ? scroll.getScrollY() : scrollTarget();
+        if (!moving && scrollAnim != null) scrollAnim.cancel();
+        if (!moving && scroll.getScrollY() != scrollTo) {
             if (animate) {
                 scrollAnim = ObjectAnimator.ofInt(scroll, "scrollY", scrollTo);
                 scrollAnim.setDuration(380);
@@ -627,9 +875,9 @@ public class MainActivity extends Activity {
     }
 
     private void updateDockTitle() {
-        boolean show = zone == DOCK && dockIdx < repo.dock.size();
+        AppRepository.App a = focusedApp();
+        boolean show = a != null && (zone == DOCK || moving);
         if (show) {
-            AppRepository.App a = repo.dock.get(dockIdx);
             if (!a.label.equals(dockTitle.getText())) {
                 dockTitle.setText(a.label);
                 dockTitle.setAlpha(0.3f);
