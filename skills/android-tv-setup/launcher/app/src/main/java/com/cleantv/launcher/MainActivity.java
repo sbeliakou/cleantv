@@ -921,16 +921,20 @@ public class MainActivity extends Activity {
 
     private void updateNetwork(NetworkCapabilities caps) {
         TextView p = pills[1];
+        // The icon has to follow the text: a wired link under a Wi-Fi symbol reads as a mistake.
+        int icon = R.drawable.ic_wifi;
         if (caps == null) {
             p.setText(R.string.offline);
         } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
             p.setText(R.string.ethernet);
+            icon = R.drawable.ic_ethernet;
         } else {
             WifiInfo info = getSystemService(WifiManager.class).getConnectionInfo();
             String ssid = info == null ? null : info.getSSID();
             boolean known = ssid != null && !ssid.isEmpty() && !ssid.equals(WifiManager.UNKNOWN_SSID);
             p.setText(known ? ssid.replaceAll("^\"|\"$", "") : getString(R.string.wifi));
         }
+        p.setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0);
         if (zone == TOP) afterLayout(() -> applyFocus(false));
     }
 
