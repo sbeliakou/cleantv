@@ -39,6 +39,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
@@ -65,7 +66,10 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
 
     private static final int TOP = 0, DOCK = 1, GRID = 2, MENU = 3;
-    private static final float LIFT = 1.08f;
+    /** How much the focused tile grows. The plate's own gap is PLATE_PAD, in dp — a share of the
+     *  side would differ top-to-bottom and left-to-right, because the tile is wider than it is tall. */
+    private static final float LIFT = 1.10f;
+    private static final int PLATE_PAD_DP = 5;
     /** Border colours: plain white while navigating, amber while a tile is held. */
     private static final int STROKE_IDLE = 0x59FFFFFF, STROKE_MOVING = 0xCCFFB340;
 
@@ -271,6 +275,9 @@ public class MainActivity extends Activity {
         int tileW = (screenW - 2 * side - (columns - 1) * gap) / columns;
         cardH = tileW * 9 / 16;
 
+        ViewGroup.MarginLayoutParams blp = (ViewGroup.MarginLayoutParams) dockBand.getLayoutParams();
+        blp.setMarginStart(bandMargin);
+        blp.setMarginEnd(bandMargin);
         int dockPad = side - bandMargin - gap / 2;
         dockRv.setPadding(dockPad, 0, dockPad, 0);
         gridRv.setPadding(side - gap / 2, 0, side - gap / 2, 0);
@@ -283,7 +290,7 @@ public class MainActivity extends Activity {
         }
 
         int labelSpace = 0;  // tile labels are hidden; the name is shown above the dock
-        int lift = (int) (cardH * (LIFT - 1) / 2) + px(2);
+        int lift = (int) (cardH * (LIFT - 1) / 2) + px(PLATE_PAD_DP) + px(2);
         int bandPad = Math.max(0, dockBand.getPaddingTop() - lift);
         dockBand.setPadding(dockBand.getPaddingLeft(), bandPad, dockBand.getPaddingRight(), bandPad);
         int bandH = 2 * bandPad + cardH + 2 * lift + labelSpace;
@@ -391,7 +398,7 @@ public class MainActivity extends Activity {
         }
         repo = r;
         lifted = null;
-        int lift = (int) (cardH * (LIFT - 1) / 2) + px(2);
+        int lift = (int) (cardH * (LIFT - 1) / 2) + px(PLATE_PAD_DP) + px(2);
         dockRv.setAdapter(new TileAdapter(repo.dock, cardH, gap, 0, lift, radius, regular, first, false));
         gridRv.setAdapter(new TileAdapter(repo.grid, cardH, gap, gap / 2, 0, radius, regular, first, true));
         gridTitle.setVisibility(repo.grid.isEmpty() ? View.GONE : View.VISIBLE);
@@ -843,8 +850,9 @@ public class MainActivity extends Activity {
         RectF plate = new RectF(r);
         float corner;
         if (zone == DOCK || zone == GRID) {
-            plate.inset(-(r.width() * (LIFT - 1) / 2 + px(6)), -(r.height() * (LIFT - 1) / 2 + px(6)));
-            corner = radius * LIFT + px(6);
+            float pad = px(PLATE_PAD_DP);
+            plate.inset(-(r.width() * (LIFT - 1) / 2 + pad), -(r.height() * (LIFT - 1) / 2 + pad));
+            corner = radius * LIFT + pad;
         } else if (zone == MENU) {
             plate.inset(px(8), px(1));
             corner = px(14);
