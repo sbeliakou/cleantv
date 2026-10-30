@@ -24,6 +24,9 @@ import java.util.Set;
 /** Loads launchable TV apps and splits them into dock and grid. */
 final class AppRepository {
 
+    private static final String DOCK_ORDER = "dock_order";
+    private static final Collator COLLATOR = Collator.getInstance(new Locale("be"));
+
     static final class App {
         String pkg;
         CharSequence label;
@@ -44,15 +47,37 @@ final class AppRepository {
         collect(pm, Intent.CATEGORY_LEANBACK_LAUNCHER, hidden, byPkg);
 
         dock.clear();
-        for (String pkg : ctx.getResources().getStringArray(R.array.dock_apps)) {
+        // Once the owner rearranges the dock we follow their order; config.xml is only the default.
+        String saved = ctx.getSharedPreferences("launcher", Context.MODE_PRIVATE).getString(DOCK_ORDER, "");
+        String[] order = saved.isEmpty() ? ctx.getResources().getStringArray(R.array.dock_apps)
+                : saved.split("\n");
+        for (String pkg : order) {
             App a = byPkg.remove(pkg);
             if (a == null) a = phoneApp(pm, pkg);
             if (a != null) dock.add(a);
         }
         grid.clear();
         grid.addAll(byPkg.values());
-        Collator col = Collator.getInstance(new Locale("ru"));
-        grid.sort((x, y) -> col.compare(x.label.toString(), y.label.toString()));
+        grid.sort((x, y) -> COLLATOR.compare(x.label.toString(), y.label.toString()));
+    }
+
+    /** Puts an app back into the alphabetical grid and returns where it landed. */
+    int insertIntoGrid(App a) {
+        int i = 0;
+        while (i < grid.size() && COLLATOR.compare(grid.get(i).label.toString(), a.label.toString()) < 0) i++;
+        grid.add(i, a);
+        return i;
+    }
+
+    /** Stores the dock order so it survives a restart. */
+    static void saveDockOrder(Context ctx, List<App> dock) {
+        StringBuilder sb = new StringBuilder();
+        for (App a : dock) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(a.pkg);
+        }
+        ctx.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+                .edit().putString(DOCK_ORDER, sb.toString()).apply();
     }
 
     private void collect(PackageManager pm, String category, Set<String> hidden, Map<String, App> out) {

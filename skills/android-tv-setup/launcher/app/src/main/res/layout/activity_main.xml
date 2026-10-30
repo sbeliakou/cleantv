@@ -34,13 +34,13 @@
             <FrameLayout
                 android:id="@+id/hero"
                 android:layout_width="match_parent"
-                android:layout_height="600dp"
+                android:layout_height="210dp"
                 android:clipChildren="false">
 
                 <View
                     android:id="@+id/glow"
-                    android:layout_width="900dp"
-                    android:layout_height="420dp"
+                    android:layout_width="700dp"
+                    android:layout_height="260dp"
                     android:layout_gravity="bottom|start"
                     android:layout_marginStart="-260dp"
                     android:layout_marginBottom="-190dp"
@@ -50,7 +50,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="64dp"
-                    android:layout_marginTop="44dp"
+                    android:layout_marginTop="26dp"
                     android:orientation="vertical">
 
                     <TextView
@@ -68,7 +68,7 @@
                         android:includeFontPadding="false"
                         android:letterSpacing="-0.02"
                         android:textColor="#FFFFFFFF"
-                        android:textSize="92sp" />
+                        android:textSize="48sp" />
 
                     <TextView
                         android:id="@+id/date"
@@ -83,7 +83,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="top|end"
-                    android:layout_marginTop="52dp"
+                    android:layout_marginTop="26dp"
                     android:layout_marginEnd="64dp"
                     android:orientation="horizontal">
 
@@ -120,7 +120,7 @@
                     android:alpha="0"
                     android:singleLine="true"
                     android:textColor="#F2FFFFFF"
-                    android:textSize="50sp" />
+                    android:textSize="28sp" />
             </FrameLayout>
 
             <FrameLayout
@@ -130,8 +130,8 @@
                 android:layout_marginStart="40dp"
                 android:layout_marginEnd="40dp"
                 android:clipChildren="false"
-                android:paddingTop="22dp"
-                android:paddingBottom="10dp">
+                android:paddingTop="16dp"
+                android:paddingBottom="16dp">
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/dock"
@@ -170,6 +170,16 @@
         </LinearLayout>
     </ScrollView>
 
+    <ImageView
+        android:id="@+id/scrollHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="10dp"
+        android:alpha="0.45"
+        android:src="@drawable/ic_scroll_hint" />
+
+
     <LinearLayout
         android:id="@+id/inputsMenu"
         android:layout_width="240dp"
@@ -184,4 +194,26 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:alpha="0" />
+    <TextView
+        android:id="@+id/moveHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="24dp"
+        android:alpha="0"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="9dp"
+        android:paddingBottom="9dp"
+        android:singleLine="true"
+        android:text="@string/move_hint"
+        android:textColor="#E6FFFFFF"
+        android:textSize="17sp" />
+
+    <View
+        android:id="@+id/insertCursor"
+        android:layout_width="2dp"
+        android:layout_height="40dp"
+        android:alpha="0" />
+
 </FrameLayout>
